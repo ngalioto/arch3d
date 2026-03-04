@@ -2,4 +2,5 @@
 
 Documentation for generating embeddings has been moved to the root README:
 
-- [Generate embeddings](../../README.md#scripts)
+- [Pretrain](../../README.md#pretrain)
+- [Generate embeddings](../../README.md#generate-embeddings)

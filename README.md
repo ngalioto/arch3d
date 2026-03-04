@@ -12,6 +12,23 @@ python -m pip install .
 
 ## Scripts
 
+<a id="pretrain"></a>
+<details>
+<summary>Pre-train</summary>
+Pre-train ARCH3D from scratch with [`pretrain.py`](digitalcell/scripts/pretrain.py)
+
+**Parameters:**
+- `config` (str): Path to the configuration file
+
+**Example:**
+```bash
+python digitalcell/scripts/pretrain.py \
+    --config "/path/to/config"
+```
+
+</details>
+
+<a id="generate-embeddings"></a>
 <details>
 <summary>Generate pre-trained embeddings</summary>
 
