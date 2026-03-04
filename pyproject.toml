@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "arch3d"
+version = "0.1.0"
+
+requires-python = ">=3.8"
+authors = [
+  {name = "Nicholas Galioto", email = "ngalioto@umich.edu"},
+]
+
+description = "A foundation model for global genome architecture."
+readme = "README.md"
+license = {file = "LICENSE"}
+dependencies = [
+  "torch",
+  "lightning",
+  "PyYAML",
+  "numpy>=1.9,<2",
+  "scipy",
+  "pandas",
+  "cooler",
+  "h5py",
+  "tqdm",
+  "pybloom-live",
+  "scikit-learn",
+  "joblib",
+  "wandb",
+]
+keywords = ["arch3d", "biology", "digital biology", "foundation model", "Hi-C", "genome architecture", "global genome architecture"]
+classifiers = [
+  "Programming Language :: Python",
+  "Development Status :: 1 - Planning",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Natural Language :: English",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Topic :: Scientific/Engineering :: Bio-Informatics"
+]
+
+[project.urls]
+Homepage = "https://rajapakse.lab.medicine.umich.edu/"
+Repository = "https://github.com/ngalioto/arch3d"
+
+[tool.setuptools.packages.find]
+include = ["digitalcell*"]
