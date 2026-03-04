@@ -96,7 +96,7 @@ if __name__ == '__main__':
     parser.add_argument('--data_file', type=str, required=True, help='Path to the HiC data file.')
     parser.add_argument('--resolution', type=int, required=True, help='Resolution for binning the data.')
     parser.add_argument('--save_dir', type=str, required=True, help='File path for saving the embeddings')
-    parser.add_argument('--shuffle', type=bool, required=False, default=True, help='Shuffle loci or not')
+    parser.add_argument('--shuffle', type=bool, required=False, default=True, help='Shuffle loci or not before generating embeddings')
 
     args = parser.parse_args()
 
