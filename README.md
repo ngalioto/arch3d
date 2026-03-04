@@ -15,6 +15,7 @@ python -m pip install .
 <a id="pretrain"></a>
 <details>
 <summary>Pre-train</summary>
+
 Pre-train ARCH3D from scratch with [`pretrain.py`](digitalcell/scripts/pretrain.py)
 
 **Parameters:**
