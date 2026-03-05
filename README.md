@@ -102,7 +102,72 @@ python digitalcell/scripts/generate_embeddings.py \
 
 ### Resolution enhancement
 
+<details>
+<summary>downsample.py</summary>
 
+Downsample Hi-C experiment with [`downsample.py`](digitalcell/tasks/enhancement/downsample.py)
+
+**Parameters:**
+- `frac` (float): Fraction of contacts to retain via binomial thinning
+- `mcool_file` (str): Path to mcool file at 5000 bp resolution
+- `save_dir` (str, optional): Directory to save downsampled cooler file (default: same directory as input)
+
+**Outputs:**
+- `{accession}_{int(100*frac)}pct.cool` (cool file): Downsampled Hi-C contact matrix
+
+**Example:**
+```bash
+python digitalcell/tasks/enhancement/downsample.py \
+  --frac 0.1 \
+  --mcool_file "path/to/accession.mcool" \
+  --save_dir "path/to/output/directory"
+```
+
+After creating the low-coverage .cool file, use `zoomify` to create all desired resolutions, and then balance each resolution.
+```bash
+cooler zoomify path/to/file_{int(100*frac)}pct.cool \
+    -r 5000,10000,25000,50000,100000,250000,500000,1000000 \
+    -o path/to/accession_{int(100*frac)}pct.mcool
+
+for res in 5000 10000 25000 50000 100000 250000 500000 1000000; do
+    cooler balance path/to/accession_{int(100*frac)}pct.mcool::/resolutions/$res
+done
+```
+Lastly, create the inputs and targets for training. The inputs to ARCH3D are always at 5 kb.
+```bash
+python digitalcell/data/toeplitz_normalize.py \
+  "path/to/accession_{int(100*frac)}pct.mcool" \
+  "path/to/directory/holding/inputs" \
+  --save_name "accession_{int(100*frac)}pct"
+  --resolution 5000
+```
+The targets should be normalized at the target resolution to prevent introducing errors from pooling.
+```bash
+python digitalcell/data/toeplitz_normalize.py \
+  "path/to/accession_{int(100*frac)}pct.mcool" \
+  "path/to/directory/holding/targets" \
+  --save_name "accession_$res"
+  --resolution $res
+```
+
+</details>
+
+
+<details>
+<summary>enhancement.py</summary>
+
+Train a resolution enhancement model with [`enhance.py`](digitalcell/tasks/enhancement/enhancement.py)
+
+**Parameters:**
+- `config` (str): Path to the enhancement configuration file (default: `digitalcell/tasks/enhancement/res_enhancement.yaml`)
+
+**Example:**
+```bash
+python digitalcell/tasks/enhancement/enhance.py \
+  --config "path/to/config.yaml"
+```
+
+</details>
 
 ### Hyperedge prediction
 
