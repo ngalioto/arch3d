@@ -14,9 +14,9 @@ python -m pip install .
 
 <a id="normalize"></a>
 <details>
-<summary>Observed/expected normalization</summary>
+<summary>toeplitz_normalize.py</summary>
 
-Normalize Hi-C using [`toeplitz_normalize.py`](digitalcell/data/toeplitz_normalize.py)
+Perform observed/expected normalization on a cooler file with [`toeplitz_normalize.py`](digitalcell/data/toeplitz_normalize.py)
 
 **Parameters:**
 - `file_name` (str): Path to mcool file
@@ -48,7 +48,7 @@ python digitalcell/data/toeplitz_normalize.py \
 
 <a id="pretrain"></a>
 <details>
-<summary>Pre-train</summary>
+<summary>pretrain.py</summary>
 
 Pre-train ARCH3D from scratch with [`pretrain.py`](digitalcell/scripts/pretrain.py)
 
@@ -65,7 +65,9 @@ python digitalcell/scripts/pretrain.py \
 
 <a id="generate-embeddings"></a>
 <details>
-<summary>Generate pre-trained embeddings</summary>
+<summary>generate_embeddings.py</summary>
+
+The steps to generate pre-trained embeddings from a Hi-C experiment are the following:
 
 1. Create an mcool file with the desired resolution
 2. Perform observed/expected normalization on the Hi-C experiment using [`toeplitz_normalize.py`](digitalcell/data/toeplitz_normalize.py)
@@ -108,7 +110,7 @@ The workflow for this task is as follows:
 
 1. Run [`process_clusters.py`](digitalcell/tasks/hyperedge/process_clusters.py)
 2. Set the parameters in [`generate_kmers.py`](digitalcell/tasks/hyperedge/generate_kmers.py) and run
-3. Generate embeddings from virtual or real Hi-C with [`generate_embeddings`](digitalcell/scripts/generate_embeddings.py)
+3. Generate embeddings from virtual or real Hi-C with [`generate_embeddings.py`](digitalcell/scripts/generate_embeddings.py)
 4. Train the model [`hyperedge.py`](digitalcell/tasks/hyperedge/hyperedge.py)
 5. Test the predictions with [`test_hyperedge.py`](digitalcell/tasks/hyperedge/test_hyperedge.py)
 
