@@ -12,29 +12,11 @@ python -m pip install .
 
 ## Scripts
 
-<a id="pretrain"></a>
+<a id="normalize"></a>
 <details>
-<summary>Pre-train</summary>
+<summary>Observed/expected normalization</summary>
 
-Pre-train ARCH3D from scratch with [`pretrain.py`](digitalcell/scripts/pretrain.py)
-
-**Parameters:**
-- `config` (str): Path to the configuration file
-
-**Example:**
-```bash
-python digitalcell/scripts/pretrain.py \
-    --config "/path/to/config"
-```
-
-</details>
-
-<a id="generate-embeddings"></a>
-<details>
-<summary>Generate pre-trained embeddings</summary>
-
-1. Create an mcool file with the desired resolution
-2. Perform observed/expected normalization on the Hi-C experiment using [`toeplitz_normalize.py`](digitalcell/data/toeplitz_normalize.py)
+Normalize Hi-C using [`toeplitz_normalize.py`](digitalcell/data/toeplitz_normalize.py)
 
 **Parameters:**
 - `file_name` (str): Path to mcool file
@@ -62,6 +44,31 @@ python digitalcell/data/toeplitz_normalize.py \
     --balance True
 ```
 
+</details>
+
+<a id="pretrain"></a>
+<details>
+<summary>Pre-train</summary>
+
+Pre-train ARCH3D from scratch with [`pretrain.py`](digitalcell/scripts/pretrain.py)
+
+**Parameters:**
+- `config` (str): Path to the configuration file
+
+**Example:**
+```bash
+python digitalcell/scripts/pretrain.py \
+    --config "/path/to/config"
+```
+
+</details>
+
+<a id="generate-embeddings"></a>
+<details>
+<summary>Generate pre-trained embeddings</summary>
+
+1. Create an mcool file with the desired resolution
+2. Perform observed/expected normalization on the Hi-C experiment using [`toeplitz_normalize.py`](digitalcell/data/toeplitz_normalize.py)
 3. Generate the embeddings with [`generate_embeddings.py`](digitalcell/scripts/generate_embeddings.py)
 
 **Parameters:**
@@ -85,6 +92,78 @@ python digitalcell/scripts/generate_embeddings.py \
     --resolution 5000 \
     --save_dir "embeddings_output" \
     --shuffle True
+```
+
+</details>
+
+## Downstream tasks
+
+### Resolution enhancement
+
+
+
+### Hyperedge prediction
+
+The workflow for this task is as follows:
+
+1. Run [`process_clusters.py`](digitalcell/tasks/hyperedge/process_clusters.py)
+2. Set the parameters in [`generate_kmers.py`](digitalcell/tasks/hyperedge/generate_kmers.py) and run
+3. Generate embeddings from virtual or real Hi-C with [`generate_embeddings`](digitalcell/scripts/generate_embeddings.py)
+4. Train the model [`hyperedge.py`](digitalcell/tasks/hyperedge/hyperedge.py)
+5. Test the predictions with [`test_hyperedge.py`](digitalcell/tasks/hyperedge/test_hyperedge.py)
+
+
+Each script is explained below:
+
+<details>
+<summary>process_clusters.py</summary>
+
+**Parameters:**
+- `parent_dir` (str): Path to directory containing cluster files
+- `parent_save_dir` (str): Path to directory for saving processed files
+- `resolution` (int): Resolution for inference (default: 100000)
+
+**Outputs:**
+- `{parent_save_dir}/{parent_dir_name}/edge_list.npy` (`numpy.ndarray`): Hyperedges for inference
+- `{parent_save_dir}/{parent_dir_name}/matrix.txt` (tab-separated): Contact matrix pixels
+- `{parent_save_dir}/{parent_dir_name}/bins.bed` (BED format): Genomic bins
+- `{parent_save_dir}/{parent_dir_name}/output.cool` (cool file): Cooler file at 1 kb resolution
+- `{parent_save_dir}/{parent_dir_name}/output.mcool` (mcool file): Multi-resolution Cooler file with balanced Hi-C
+
+**Example:**
+```bash
+python digitalcell/tasks/hyperedge/process_clusters.py \
+  --parent-dir "path/to/directory/containing/clusters/files" \
+  --parent-save-dir "path/to/output" \
+  --resolution 100000
+```
+
+</details>
+
+<details>
+<summary>generate_kmers.py</summary>
+
+Generate k-mer hyperedges from `edge_list.npy` with [`generate_kmers.py`](digitalcell/tasks/hyperedge/generate_kmers.py)
+
+**Parameters:**
+- `max_cluster_size` (int): Maximum cluster size to consider
+- `k_list` (List[int]): List of k-mer sizes to generate
+- `temp_dir` (str): Directory containing edge_list.npy and for saving outputs
+- `min_freq_cutoff` (int): Minimum frequency threshold for k-mers (default: 2)
+- `resolution` (int): Resolution for inference (default: 100000)
+
+**Outputs:**
+- `{temp_dir}/all_{k}_counter.npy` (`numpy.ndarray`): k-mer hyperedges for each k in k_list
+- `{temp_dir}/all_{k}_freq_counter.npy` (`numpy.ndarray`): Frequency counts for each k-mer
+
+**Example:**
+```bash
+python digitalcell/tasks/hyperedge/generate_kmers.py \
+  --max_cluster_size 25 \
+  --k_list [3,4,5] \
+  --temp_dir "path/to/temp" \
+  --min_freq_cutoff 2 \
+  --resolution 100000
 ```
 
 </details>
