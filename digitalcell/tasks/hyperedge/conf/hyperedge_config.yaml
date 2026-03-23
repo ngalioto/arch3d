@@ -1,0 +1,74 @@
+# Parameters to initialize the hyperedge model
+# Config class can be found at digitalcell/tasks/hyperedge/model.py (HyperedgeModelConfig)
+model:
+
+  backbone_path: 'path/to/pretrained/checkpoint' # str. Path to a checkpoint to load the model from.
+
+  task_head_model: 'mlp' # str. Model type for the task head. Choices are ['mlp', 'transformer']
+  hidden_size: 1024 # int. Hidden size of the transformer encoder.
+  activation: 'relu' # str. Activation function in the task head. Choices are ['relu', 'gelu', 'leaky_relu', 'tanh']
+  num_layers: 4 # int. Number of hidden layers in the task head
+
+  # Optimization parameters
+  optim:
+      train_input_layer: false # bool. Whether to train the input layer of the model.
+      trainable_layers: [] # List[int]. List of layers to train in the model. Layers not in the list will be frozen.
+      scheduler: 'constant_with_warmup' # str. Learning rate scheduler. Choices are ['inverse_sqrt', 'cosine_annealing', 'cosine_annealing_with_restarts', 'constant_with_warmup']
+      warmup_steps: 100 # int. Number of warmup steps to use during training.
+      lr: 1e-5 # float. Initial learning rate for optimizer.
+
+dataset:
+  neg_num: 1 # int. Number of negative samples generated per positive hyperedge.
+  min_distance: 0 # int. Minimum genomic distance between loci in a hyperedge
+  k-mer_size:
+    - 3
+    - 4
+    - 5
+  quantile_cutoff_for_positive: 0.6 # float. Quantile threshold used to mark positive hyperedges.
+  quantile_cutoff_for_unlabel: 0.4 # float. Quantile threshold below which hyperedges are treated as unlabeled/background.
+  resolution: 100000 # int. Resolution of Pore-C data.
+  
+# Parameters to initialize the datamodule
+datamodule:
+  data_dir: # Path. Path to the directory containing the data.
+    - 'path/to/GM12878_deshpande_2022/'
+    - 'path/to/BJ_fibroblast/'
+    - 'path/to/IR_fibroblast/'
+  hic_path: # Path. Path to the Hi-C observed/expected file.
+    - 'path/to/virtual_data/GM12878_deshpande_2022_5kb.npz'
+    - 'path/to/virtual_data/BJ_fibroblast_5kb.npz'
+    - 'path/to/virtual_data/IR_fibroblast_5kb.npz'
+  embeddings_path: 
+    - 'path/to/GM12878_deshpande_2022/pretrained_embeddings.pt'
+    - 'path/to/BJ_fibroblast/pretrained_embeddings.pt'
+    - 'path/to/IR_fibroblast/pretrained_embeddings.pt'
+
+  seed: 42 # int. Random seed.
+  batch_size: 128 # int. Batch size.
+  train_split: 
+    - 100000 # float | int. Proportion of hyperedges to use for training
+    - 100000 # float | int. Proportion of hyperedges to use for validation
+  metadata_dir: null # Path | null. Directory to store metadata/config artifacts; if null, metadata is not saved.
+
+# Parameters to initialize the trainer
+# parameter choices and defaults can be found here: https://lightning.ai/docs/pytorch/stable/common/trainer.html#init
+trainer:
+  strategy: "ddp_find_unused_parameters_true"
+  accelerator: 'auto' # str | Accelerator. Choices are ("cpu", "gpu", "tpu", "hpu", "mps", "auto")
+  precision: '32-true' # str | int. Trainer precision setting.
+  max_epochs: 50 # int. Number of epochs to use for training.
+  log_every_n_steps: 100 # int. Number of steps between logging.
+  gradient_clip_val: 1 # float
+  accumulate_grad_batches: 1 # int (effective batch size is `accumulate_grad_batches` * `batch_size`)
+  default_root_dir: "/path/to/save/checkpoints" # Path. Default path to save checkpoints and logs.
+
+# Parameters to initialize the logger
+# parameter choices and defaults for Wandb logger can be found here: https://lightning.ai/docs/pytorch/stable/extensions/generated/lightning.pytorch.loggers.WandbLogger.html#wandblogger
+# and kwargs options found here https://docs.wandb.ai/ref/python/init
+logger:
+  use_wandb: true # bool. Use W&B to log training metrics and checkpoints.
+  name: 'name for the run' # str. Display name of run for Wandb.
+  save_dir: 'save_dir' # Path. Path to where Wandb saves data.
+  offline: false # bool. Use W&B in offline mode.
+  project: 'project name' # str. The name of the W&B project.
+  log_model: true # Literal["all"] | bool. Log model checkpoints on Wandb. "all" logs checkpoints as they are created, true logs checkpoints at the end of training, and false does not log checkpoints.
