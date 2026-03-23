@@ -1,0 +1,122 @@
+ckpt_path: '/path/to/pretrained/checkpoint' # str. Path to a checkpoint to load the model from.
+
+# Parameters to initialize the foundation model
+# Config class can be found at digitalcell/model/hict.py (HiCT_Config)
+model:
+ 
+  d_model: 1024 # int. Model dimension.
+  num_heads: 16 # int. Number of encoder attention heads
+  dim_feedforward: 4096 # int. Feedforward dimension of the ffn in the encoder.
+  dropout: 0.1 # float. Dropout rate in the encoder
+  activation: 'relu' # str. Activation function in the transformer encoder. Choices are ['relu', 'gelu', 'leaky_relu', 'tanh']
+  num_layers: 24 # int. Number of transformer blocks in the encoder.
+  prepend_cls: false # bool. Prepend the cls token to the input sequence.
+
+  use_gaussian_fourier_features: false # bool. Use Gaussian Fourier features for the positional encoding
+  fourier_feature_scale: 1000 # int. Standard deviation for Gaussian Fourier features. Only needed if use_gaussian_fourier_features is true. Must be positive
+
+  # Optimization parameters
+  optim:
+      train_input_layer: true # bool. Whether to train the input layer of the model.
+      trainable_layers: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23] # List[int]. List of layers to train in the model. Layers not in the list will be frozen.
+      train_pretext_task_head: true # bool. Whether to train the pretext task head.
+      scheduler: 'constant_with_warmup' # str. Learning rate scheduler. Choices are ['inverse_sqrt', 'cosine_annealing', 'cosine_annealing_with_restarts', 'constant_with_warmup']
+      warmup_steps: 500 # int. Number of warmup steps to use during training.
+      lr: 1e-5 # float. Initial learning rate for optimizer.
+      min_lr: 1e-6 # float. Minimum learning rate for optimizer
+
+# Parameters to initialize the datamodule
+# Datamodule definition can be found at digitalcell/tasks/enhancement/datamodule.py
+dataset:
+  downsample_percentages:
+    - 1
+    - 10
+    - 100
+  resolutions:
+    - 5000
+    - 10000
+    - 25000
+    - 50000
+    - 100000
+    - 250000
+    - 500000
+    - 1000000
+  chroms:
+    - 1
+    - 2
+    - 3
+    - 4
+    - 5
+    - 6
+    - 7
+    - 8
+    - 9
+    - 10
+    - 11
+    - 12
+    - 13
+    - 14
+    - 15
+    - 16
+    - 17
+    - 18
+    - 19
+    - 20
+    - 21
+    - 22
+  
+datamodule:
+  inputs_dir: 
+    - '/path/to/low_coverage/4DNFIXP4QG5B'
+    - '/path/to/low_coverage/4DNFI18UHVRO'
+    - '/path/to/low_coverage/4DNFI43WFPJ5'
+    - '/path/to/low_coverage/4DNFI46OLTQE'
+    - '/path/to/low_coverage/4DNFI5IHU27G'
+    - '/path/to/low_coverage/4DNFIGUIV5KO'
+    - '/path/to/low_coverage/4DNFINKFRVWU'
+    - '/path/to/low_coverage/4DNFIJTOIGOI'
+  targets_dir: 
+    - '/path/to/low_coverage/4DNFIXP4QG5B/targets'
+    - 'path/to/low_coverage/4DNFI18UHVRO/targets'
+    - '/path/to/low_coverage/4DNFI43WFPJ5/targets'
+    - '/path/to/low_coverage/4DNFI46OLTQE/targets'
+    - '/path/to/low_coverage/4DNFI5IHU27G/targets'
+    - '/path/to/low_coverage/4DNFIGUIV5KO/targets'
+    - '/path/to/low_coverage/4DNFINKFRVWU/targets'
+    - '/path/to/low_coverage/4DNFIJTOIGOI/targets'
+  data_split: # Iterable[float]. Train, validation, and test split.
+    - 6 # train
+    - 2 # val
+    - 0. # test
+  batch_size: 2 # int. Batch size.
+  num_workers: 0 # int. Number of workers.
+  prefetch_factor: null # int.
+  seed: 42 # int. Random seed.
+  metadata_dir: 'path/to/metadata/enhancement_run' # Path | null. Directory to save metadata artifacts.
+  drop_last: true
+  max_files: null # int
+
+# Parameters to initialize the trainer
+# parameter choices and defaults can be found here: https://lightning.ai/docs/pytorch/stable/common/trainer.html#init
+trainer:
+  accelerator: 'auto' # str | Accelerator. Choices are ("cpu", "gpu", "tpu", "hpu", "mps", "auto")
+  precision: '32-true' # str | int. Trainer precision setting.
+  devices: 'auto' # int | str | list[int]. Devices to train on.
+  num_nodes: 1 # int. Number of nodes to use for training.
+  max_epochs: 200 # int. Number of epochs to use for training.
+  check_val_every_n_epoch: 20 # int. Number of epochs between validation set evaluation.
+  log_every_n_steps: 1 # int. Number of steps between logging.
+  gradient_clip_val: 1 # float
+  accumulate_grad_batches: 2 # int (effective batch size is `accumulate_grad_batches` * `batch_size`)
+  use_distributed_sampler: false # bool
+
+# Parameters to initialize the logger
+# parameter choices and defaults for Wandb logger can be found here: https://lightning.ai/docs/pytorch/stable/extensions/generated/lightning.pytorch.loggers.WandbLogger.html#wandblogger
+# and kwargs options found here https://docs.wandb.ai/ref/python/init
+logger:
+  use_wandb: true # bool. Use W&B to log training metrics and checkpoints.
+  name: 'run name' # str. Display name of run for Wandb.
+  save_dir: 'path/to/wandb/output' # Path. Directory where Wandb saves local run data.
+  offline: false # bool. Use W&B in offline mode.
+  project: 'project name' # str. The name of the W&B project.
+  log_model: true # Literal["all"] | bool. Log model checkpoints on Wandb. "all" logs checkpoints as they are created, true logs checkpoints at the end of training, and false does not log checkpoints.
