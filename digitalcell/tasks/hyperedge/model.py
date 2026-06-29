@@ -10,13 +10,20 @@ from digitalcell.optim.lr_scheduler import configure_scheduler
 @dataclass
 class HyperedgeModelConfig:
 
+    # Path to the pretrained HiCT checkpoint. The backbone is NOT run at train
+    # time -- locus embeddings are precomputed offline by
+    # scripts/generate_embeddings.py. The checkpoint is read only to recover the
+    # encoder dimensions (d_model, num_heads, dim_feedforward, dropout,
+    # activation) used to build the task head.
     backbone_path: str
-   
-    # Encoder parameters
-    task_head_model: str = 'mlp'
-    hidden_size: int = 1024
-    activation: str = 'relu'
+
+    # Task-head parameters. The task head is a stack of `num_layers` transformer
+    # encoder layers applied to the precomputed locus embeddings.
     num_layers: int = 4
+
+    # d_model used ONLY by the 'inverse_sqrt' (Noam) learning-rate scheduler.
+    # Ignored by every other scheduler and does NOT size the task head.
+    hidden_size: int = 1024
 
     # Optimization parameters
     optim: dict = field(default_factory=dict)
@@ -31,40 +38,33 @@ class HyperedgeModel(L.LightningModule):
         super().__init__()
 
         self.config = config
-        self.save_hyperparameters(ignore=['backbone_model'])
+        self.save_hyperparameters()
 
-        self.backbone = HiCT.load_from_checkpoint(config.backbone_path, map_location="cpu")
-        self.backbone_dim = self.backbone.config.d_model
-
-        class FeedForwardNN(nn.Module):
-            def __init__(self, input_dim, hidden_dim, output_dim):
-                super(FeedForwardNN, self).__init__()
-                self.fc1 = nn.Linear(input_dim, hidden_dim)
-                self.relu = nn.ReLU()
-                self.fc2 = nn.Linear(hidden_dim, output_dim)
-
-            def forward(self, x):
-                skip = x 
-                x = self.fc1(x)
-                x = self.relu(x)
-                x = self.fc2(x)
-                x += skip
-                return x
+        # The backbone is never run at train time -- locus embeddings are
+        # precomputed offline (see scripts/generate_embeddings.py). Load the
+        # checkpoint only to recover the encoder architecture, then drop it so it
+        # is NOT registered as a submodule. Keeping it would replicate the frozen
+        # backbone on every GPU, bloat every checkpoint, and force
+        # find_unused_parameters under DDP.
+        # weights_only=False: torch>=2.6 defaults to True, which rejects the pickled
+        # HiCT_Config in our own (trusted) checkpoint.
+        backbone = HiCT.load_from_checkpoint(config.backbone_path, map_location="cpu", weights_only=False)
+        backbone_config = backbone.config
+        self.backbone_dim = backbone_config.d_model
+        del backbone
 
         self.transformer_encoder = nn.TransformerEncoder(
             nn.TransformerEncoderLayer(
                 d_model=self.backbone_dim,
-                nhead=self.backbone.config.num_heads,
-                dim_feedforward=self.backbone.config.dim_feedforward,
-                dropout=self.backbone.config.dropout,
-                activation=self.backbone.config.activation,
+                nhead=backbone_config.num_heads,
+                dim_feedforward=backbone_config.dim_feedforward,
+                dropout=backbone_config.dropout,
+                activation=backbone_config.activation,
                 batch_first=True
             ),
             num_layers=self.config.num_layers
         )
         self.output_layer = nn.Linear(self.backbone_dim, 1)
-
-        self.layer_norm = nn.LayerNorm(self.backbone_dim, elementwise_affine=False)
 
 
     def forward(
@@ -147,20 +147,10 @@ class HyperedgeModel(L.LightningModule):
     def configure_optimizers(
         self
     ) -> dict[str, optim.Optimizer | optim.lr_scheduler.LRScheduler]:
-        
-        # Freeze backbone except for the trainable portions
-        encoder_layers = torch.arange(self.backbone.config.num_layers)
-        trainable_layers = encoder_layers[self.config.optim.get('trainable_layers', [])]
-        for name, param in self.backbone.named_parameters():
-            # Check if this parameter belongs to any of the trainable layers
-            is_trainable = any(f'encoder.layers.{layer_idx}.' in name for layer_idx in trainable_layers)
-            param.requires_grad = is_trainable
 
-        is_input_trainable = self.config.optim.get('train_input_layer', False)
-        self.backbone._linear_projection.weight.requires_grad = is_input_trainable
-        self.backbone._linear_projection.bias.requires_grad = is_input_trainable
-        self.backbone.train()
-
+        # Only the task head (transformer encoder + output layer) is trainable.
+        # The backbone is not part of this module (embeddings are precomputed),
+        # so every parameter here participates in the forward/backward pass.
         optimizer = optim.Adam(self.parameters(), lr=float(self.config.optim['lr']), betas=(0.9, 0.98), eps=1e-9)
 
         scheduler = configure_scheduler(self.config, optimizer)

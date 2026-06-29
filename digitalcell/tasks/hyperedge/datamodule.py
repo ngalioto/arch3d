@@ -110,7 +110,6 @@ class HyperedgeDataModule(L.LightningDataModule):
     def __init__(
         self,
         data_dir: Iterable[str],
-        hic_path: Iterable[str],
         embeddings_path: Iterable[str],
         seed: int = 42,
         batch_size: int = 32,
@@ -215,7 +214,7 @@ class HyperedgeDataModule(L.LightningDataModule):
                     )
                 n_total = len(full_ds)
                 train_split_val = float(split_vals[0])
-                val_split_val = float(split_vals[1]) if len(split_vals) == 2 else -1
+                val_split_val = float(split_vals[1]) if len(split_vals) == 2 else -1.0
                 both_int_like = train_split_val.is_integer() and val_split_val.is_integer()
 
                 if 0.0 <= train_split_val < 1.0 and (0.0 <= val_split_val < 1.0 or val_split_val == -1):

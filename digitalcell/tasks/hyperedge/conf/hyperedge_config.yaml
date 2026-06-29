@@ -2,17 +2,13 @@
 # Config class can be found at digitalcell/tasks/hyperedge/model.py (HyperedgeModelConfig)
 model:
 
-  backbone_path: 'path/to/pretrained/checkpoint' # str. Path to a checkpoint to load the model from.
+  backbone_path: '/data/arch3d/checkpoints/pretraining.ckpt' # str. Pretrained HiCT checkpoint. Read only to recover the encoder dimensions used to build the task head; the backbone is NOT run at train time (locus embeddings are precomputed by generate_embeddings.py).
 
-  task_head_model: 'mlp' # str. Model type for the task head. Choices are ['mlp', 'transformer']
-  hidden_size: 1024 # int. Hidden size of the transformer encoder.
-  activation: 'relu' # str. Activation function in the task head. Choices are ['relu', 'gelu', 'leaky_relu', 'tanh']
-  num_layers: 4 # int. Number of hidden layers in the task head
+  num_layers: 4 # int. Number of transformer-encoder layers stacked in the task head (the value swept 1->4 by run_num_layers_sweep.sh)
+  hidden_size: 1024 # int. d_model used ONLY by the 'inverse_sqrt' (Noam) scheduler; ignored by other schedulers and does NOT size the task head.
 
   # Optimization parameters
   optim:
-      train_input_layer: false # bool. Whether to train the input layer of the model.
-      trainable_layers: [] # List[int]. List of layers to train in the model. Layers not in the list will be frozen.
       scheduler: 'constant_with_warmup' # str. Learning rate scheduler. Choices are ['inverse_sqrt', 'cosine_annealing', 'cosine_annealing_with_restarts', 'constant_with_warmup']
       warmup_steps: 100 # int. Number of warmup steps to use during training.
       lr: 1e-5 # float. Initial learning rate for optimizer.
@@ -24,24 +20,19 @@ dataset:
     - 3
     - 4
     - 5
-  quantile_cutoff_for_positive: 0.6 # float. Quantile threshold used to mark positive hyperedges.
   quantile_cutoff_for_unlabel: 0.4 # float. Quantile threshold below which hyperedges are treated as unlabeled/background.
   resolution: 100000 # int. Resolution of Pore-C data.
   
 # Parameters to initialize the datamodule
 datamodule:
-  data_dir: # Path. Path to the directory containing the data.
-    - 'path/to/GM12878_deshpande_2022/'
-    - 'path/to/BJ_fibroblast/'
-    - 'path/to/IR_fibroblast/'
-  hic_path: # Path. Path to the Hi-C observed/expected file.
-    - 'path/to/virtual_data/GM12878_deshpande_2022_5kb.npz'
-    - 'path/to/virtual_data/BJ_fibroblast_5kb.npz'
-    - 'path/to/virtual_data/IR_fibroblast_5kb.npz'
-  embeddings_path: 
-    - 'path/to/GM12878_deshpande_2022/pretrained_embeddings.pt'
-    - 'path/to/BJ_fibroblast/pretrained_embeddings.pt'
-    - 'path/to/IR_fibroblast/pretrained_embeddings.pt'
+  data_dir: # Path. Per-experiment dir holding all_{k}_counter.npy + all_{k}_freq_counter.npy (from generate_kmers.py). The hash table is auto-built here on first run.
+    - '/data/arch3d/hyperedge/experiments/GM12878_deshpande_2022/'
+    - '/data/arch3d/hyperedge/experiments/BJ_fibroblast/'
+    - '/data/arch3d/hyperedge/experiments/IR_fibroblast/'
+  embeddings_path: # Path. Per-experiment precomputed locus embeddings (from generate_embeddings.py).
+    - '/data/arch3d/hyperedge/experiments/GM12878_deshpande_2022/pretrained_embeddings.pt'
+    - '/data/arch3d/hyperedge/experiments/BJ_fibroblast/pretrained_embeddings.pt'
+    - '/data/arch3d/hyperedge/experiments/IR_fibroblast/pretrained_embeddings.pt'
 
   seed: 42 # int. Random seed.
   batch_size: 128 # int. Batch size.
@@ -53,14 +44,17 @@ datamodule:
 # Parameters to initialize the trainer
 # parameter choices and defaults can be found here: https://lightning.ai/docs/pytorch/stable/common/trainer.html#init
 trainer:
-  strategy: "ddp_find_unused_parameters_true"
+  strategy: "ddp" # str. Standard DDP. Every task-head parameter participates in the forward pass (the backbone is not a submodule), so find_unused_parameters is not needed.
+  devices: 'auto' # int | 'auto' | -1 | list[int]. GPUs per node. 'auto'/-1 = all visible GPUs. For single-node multi-GPU, Lightning spawns one process per GPU automatically (no launcher needed).
+  num_nodes: 1 # int. Number of nodes. For multi-node, set this >1 and launch on each node with your cluster's launcher (e.g. torchrun) -- this cluster is not SLURM-managed.
+  use_distributed_sampler: true # bool. Let Lightning shard the (map-style) dataset across ranks via DistributedSampler. Keep true for correct multi-GPU data splitting.
   accelerator: 'auto' # str | Accelerator. Choices are ("cpu", "gpu", "tpu", "hpu", "mps", "auto")
   precision: '32-true' # str | int. Trainer precision setting.
   max_epochs: 50 # int. Number of epochs to use for training.
   log_every_n_steps: 100 # int. Number of steps between logging.
   gradient_clip_val: 1 # float
   accumulate_grad_batches: 1 # int (effective batch size is `accumulate_grad_batches` * `batch_size`)
-  default_root_dir: "/path/to/save/checkpoints" # Path. Default path to save checkpoints and logs.
+  default_root_dir: "/data/arch3d/hyperedge/sweeps/default" # Path. Default checkpoint/log dir (run_num_layers_sweep.sh overrides this per run).
 
 # Parameters to initialize the logger
 # parameter choices and defaults for Wandb logger can be found here: https://lightning.ai/docs/pytorch/stable/extensions/generated/lightning.pytorch.loggers.WandbLogger.html#wandblogger
@@ -68,7 +62,7 @@ trainer:
 logger:
   use_wandb: true # bool. Use W&B to log training metrics and checkpoints.
   name: 'name for the run' # str. Display name of run for Wandb.
-  save_dir: 'save_dir' # Path. Path to where Wandb saves data.
+  save_dir: '/data/arch3d/hyperedge/wandb' # Path. Path to where Wandb saves data.
   offline: false # bool. Use W&B in offline mode.
   project: 'project name' # str. The name of the W&B project.
   log_model: true # Literal["all"] | bool. Log model checkpoints on Wandb. "all" logs checkpoints as they are created, true logs checkpoints at the end of training, and false does not log checkpoints.

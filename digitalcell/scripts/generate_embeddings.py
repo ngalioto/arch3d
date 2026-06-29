@@ -79,7 +79,9 @@ def embed_experiment(
     print(f'Loading data from {data_file}...')
     data = HiC_Data(data_file)
 
-    model = HiCT.load_from_checkpoint(ckpt_path)
+    # weights_only=False: torch>=2.6 defaults to True, which rejects the pickled
+    # HiCT_Config in our own (trusted) checkpoint.
+    model = HiCT.load_from_checkpoint(ckpt_path, weights_only=False)
     model.eval()
 
     return generate_embeddings(

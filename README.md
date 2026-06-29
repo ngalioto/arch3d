@@ -171,6 +171,8 @@ python digitalcell/tasks/enhancement/enhance.py \
 
 ### Hyperedge prediction
 
+> **End-to-end reproducibility guide:** [`digitalcell/tasks/hyperedge/WORKFLOW.md`](digitalcell/tasks/hyperedge/WORKFLOW.md) walks through the whole pipeline (data accessions → clusters → embeddings → training/sweep) so others can replicate it.
+
 The workflow for this task is as follows:
 
 1. Run [`process_clusters.py`](digitalcell/tasks/hyperedge/process_clusters.py)

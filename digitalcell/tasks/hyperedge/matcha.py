@@ -183,8 +183,20 @@ def generate_negative(
 
             edge = np.copy(decompose_sample)
 
-            # generate samples until one that is not in the dictionary is found
+            # generate samples until one that is not in the dictionary is found.
+            # Bounded retries: if no valid negative can be constructed (e.g. the
+            # min_distance constraint is infeasible for the chromosome span, or a
+            # large hyperedge on a short chromosome), skip this negative instead of
+            # looping forever. An unbounded loop on a single DataLoader worker / DDP
+            # rank would silently deadlock the entire (multi-GPU) job.
+            max_attempts = 1000
+            attempts = 0
             while tuple(edge) in data_dict[hyperedge_size]:
+                if attempts >= max_attempts:
+                    edge = None
+                    break
+                attempts += 1
+
                 edge = np.copy(decompose_sample)
 
                 for node in nodes_to_change:
@@ -206,14 +218,15 @@ def generate_negative(
                 dis_list = []
                 for k in range(hyperedge_size - 1):
                     dis_list.append(edge[k + 1] - edge[k])
-                if min(dis_list) <= min_dis:
+                # `dis_list` is empty for size-1 hyperedges; nothing to constrain then
+                if dis_list and min(dis_list) <= min_dis:
                     edge = np.copy(decompose_sample)
                     continue
 
             if i == 0:
                 pos_sizes.append(hyperedge_size)
-            # Add negative sample to the list
-            if len(edge) > 0:
+            # Add negative sample to the list (skipped if no valid negative was found)
+            if edge is not None and len(edge) > 0:
                 neg_list.append(edge)
                 neg_sizes.append(hyperedge_size)
                 neg_weight.append(weight[j])

@@ -30,7 +30,14 @@ def save_config_file(config: dict) -> None:
 def main(
     config: dict
 ) -> None:
-    
+
+    # Seed python/numpy/torch RNGs and DataLoader workers before building the
+    # model or sampling data. matcha.generate_negative draws its negative samples
+    # from the global numpy/random RNGs, so this is what makes a run (and the
+    # whole layer sweep) reproducible, and keeps sampling well-defined per worker
+    # under multi-GPU/DDP.
+    L.seed_everything(config['datamodule'].get('seed', 42), workers=True)
+
     if config['datamodule']['metadata_dir'] is not None:
         save_config_file(config)
 
@@ -76,7 +83,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--config',
         type=Path,
-        default='digitalcell/tasks/hyperedge/hyperedge_config.yaml',
+        default=Path(__file__).parent / 'conf' / 'hyperedge_config.yaml',
         help='Path to the hyperedge configuration file.'
     )
 

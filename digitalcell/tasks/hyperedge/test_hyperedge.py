@@ -15,8 +15,8 @@ import glob
 import re
 
 from digitalcell.conf.utils import load_config
-from digitalcell.tasks.hyperedge.datamodule_gpu import HyperedgeDataModule
-from digitalcell.tasks.hyperedge.model_gpu import HyperedgeModel
+from digitalcell.tasks.hyperedge.datamodule import HyperedgeDataModule
+from digitalcell.tasks.hyperedge.model import HyperedgeModel
 
 from joblib import Parallel, delayed
 import Modules as legacy_modules
@@ -275,7 +275,7 @@ def main(
         datamodule.setup(stage="predict")
 
         ckpt_path = config['ckpt_path']
-        model = HyperedgeModel.load_from_checkpoint(ckpt_path, map_location="cpu")
+        model = HyperedgeModel.load_from_checkpoint(ckpt_path, map_location="cpu", weights_only=False)
         model.eval()
 
         save_dir = config['datamodule']['save_dir']
