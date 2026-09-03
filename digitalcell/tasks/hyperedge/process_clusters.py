@@ -73,36 +73,35 @@ def read_clusters(
         Nested list of clusters. Outer list is the hyperedges and inner list is the bin indices of each node in the hyperedge for the given resolution.
     """
 
-    chrom_offset = constants.get_chrom_sizes()
-    chrom_bins = torch.ceil(chrom_offset / resolution).int()
+    chrom_sizes = constants.get_chrom_sizes()
+    chrom_bins = torch.ceil(chrom_sizes / resolution).int()
     chrom_offset = torch.cat((torch.zeros(1, dtype=torch.int32), chrom_bins.cumsum(dim=0, dtype=torch.int32)))
+    # Pure-Python int offsets so per-locus binning avoids torch tensor indexing -- orders of
+    # magnitude faster on large cluster files, and produces bins identical to basepair_to_bin().
+    # off[c-1] = first bin of chromosome c; off[c] = first bin of chromosome c+1 (exclusive end).
+    off = chrom_offset.tolist()
 
     clusters = []
-    LOCUS_RE = re.compile(r"^chr([0-9]+):(\d+)$")
     with Path(path).open() as f:
         for line in f:
-            line = line.strip()
-            if not line:
+            parts = line.split()                 # splits on tabs/whitespace; parts[0] is the cluster id
+            if not parts:
                 continue
-            parts = line.split()            # splits on tabs or multiple spaces
-            cluster_id, tokens = parts[0], parts[1:]
-            # start_loci = []; stop_loci = []
-            loci = []
-            for t in tokens:
-                m = LOCUS_RE.match(t)
-                if m:
-                    chrom, pos = int(m.group(1)), int(m.group(2))
-                    
-                    # start, stop = basepair_to_bin(chrom, pos)
-                    # start_loci.append(start); stop_loci.append(stop)
-                    bin_idx = basepair_to_bin(chrom, pos, chrom_offset, resolution)
-                    if bin_idx is not None:
-                        loci.append(bin_idx)
-                    
-            # clusters.append((torch.tensor(start_loci), torch.tensor(stop_loci)))
-            # CONSIDER: clusters.append(torch.cat(loci))
-            clusters.append(sorted(set(loci))) # list of hyperedges. Each hyperedge is list of bins
-            # each hyperedge must be sorted for `generate_kmers.py` to work properly
+            loci = set()
+            for t in parts[1:]:
+                chrom_tok, sep, pos_tok = t.partition(':')
+                if not sep or chrom_tok[:3] != 'chr':
+                    continue
+                chrom_num = chrom_tok[3:]
+                if not (chrom_num.isdigit() and pos_tok.isdigit()):
+                    continue
+                chrom = int(chrom_num)
+                if chrom < 1 or chrom > 22:       # autosomes only (matches the original ^chr([0-9]+):(\d+)$ regex)
+                    continue
+                bin_idx = int(pos_tok) // resolution + off[chrom - 1]
+                if bin_idx < off[chrom]:          # drop loci that fall off the chromosome end (== basepair_to_bin None)
+                    loci.add(bin_idx)
+            clusters.append(sorted(loci))         # sorted hyperedge of bin ids (required by generate_kmers)
     return clusters
 
 def build_reference_coordinates(
@@ -135,74 +134,86 @@ def build_cooler_file(
     """
 
     num_bins, chromosomes, start_coords, end_coords = build_reference_coordinates(resolution)
-    
-    rows = []; cols = []
-    for hyperedge in clusters:
-        edge_order = len(hyperedge)
-        for ii in range(edge_order):
-            for jj in range(ii+1, edge_order):
-                if hyperedge[ii] == hyperedge[jj]:
-                    continue
-                else:
-                    rows.append(hyperedge[ii])
-                    cols.append(hyperedge[jj])
-                
-    rows = np.array(rows).reshape(-1)
-    cols = np.array(cols).reshape(-1)
 
-    data = np.ones_like(rows, dtype=np.float64)
-    hic = scipy.sparse.coo_matrix((data, (rows, cols)), shape=(num_bins, num_bins))
-    hic.sum_duplicates()
+    # Memory-bounded clique expansion. A naive (rows, cols) Python-list accumulation holds every
+    # pair with multiplicity (~1.6B pairs for the 78M-concatemer GM12878 set at 5kb -> ~75GB of
+    # Python ints -> OOM). Instead: bucket concatemers by length, vectorize each length's
+    # upper-triangle pairs (np.triu_indices), and encode each (row, col) as one int64 key
+    # (row*num_bins + col). A single np.unique gives the deduplicated, *sorted* (row, col, count) --
+    # sorted by key == sorted by (bin1, bin2), i.e. exactly cooler's pixel order. We free the
+    # multi-GB `clusters` list before building the cooler and stream the sorted pixels to
+    # create_cooler in chunks (no giant CSV dump, no lexsort), keeping peak memory bounded.
+    nb = np.int64(num_bins)
+    key_blocks: list = []
+    n_clusters = len(clusters)
+    for start in range(0, n_clusters, 2_000_000):
+        by_len = {}
+        for he in clusters[start:start + 2_000_000]:
+            m = len(he)
+            if m >= 2:                               # read_clusters de-dups loci -> all bins distinct
+                by_len.setdefault(m, []).append(he)
+        for m, group in by_len.items():
+            arr = np.asarray(group, dtype=np.int64)  # (g, m), each row sorted ascending
+            I, J = np.triu_indices(m, k=1)           # all i<j pairs -> row<col
+            key_blocks.append((arr[:, I] * nb + arr[:, J]).ravel())
+
+    if key_blocks:
+        all_keys = np.concatenate(key_blocks)
+        key_blocks.clear()
+        del clusters                                 # free the concatemer list before the cooler build
+        uk, counts = np.unique(all_keys, return_counts=True)   # sorted unique keys + their counts
+        del all_keys
+    else:
+        uk = np.empty(0, dtype=np.int64)
+        counts = np.empty(0, dtype=np.int64)
+
+    rows = (uk // nb).astype(np.int64)
+    cols = (uk % nb).astype(np.int64)
+    del uk
+
     if build_mcool_file:
-        # Cooler likes sorted pixels
-        bin1 = hic.row.astype(np.int64)
-        bin2 = hic.col.astype(np.int64)
-        order = np.lexsort((bin1, bin2))
-        pixels = pd.DataFrame({
-            "bin1_id": bin1[order],
-            "bin2_id": bin2[order],
-            "count": hic.data.astype(np.int64)[order]
-        })
         bins = pd.DataFrame({
             "chrom": [f'chr{chrom + 1}' for chrom in chromosomes],
             "start": start_coords,
-            "end": end_coords
+            "end": end_coords,
         })
-        pixels.to_csv(os.path.join(save_dir, "matrix.txt"), sep="\t", header=False, index=False)
-        bins.to_csv(os.path.join(save_dir, "bins.bed"), sep="\t", header=False, index=False)
-        
-        print("Creating cool file...")
         cooler_file = os.path.join(save_dir, "output.cool")
         mcool_file = os.path.join(save_dir, "output.mcool")
+
+        def pixel_chunks(chunk: int = 50_000_000):
+            # pixels are already sorted by (bin1_id, bin2_id) -> ordered=True
+            for s in range(0, rows.shape[0], chunk):
+                yield pd.DataFrame({
+                    "bin1_id": rows[s:s + chunk],
+                    "bin2_id": cols[s:s + chunk],
+                    "count": counts[s:s + chunk].astype(np.int64),
+                })
+
+        print(f"Creating cool file ({rows.shape[0]:,} pixels) ...", flush=True)
         cooler.create_cooler(
-            cooler_file,
-            bins=bins,
-            pixels=pixels,
-            assembly="hg38"
+            cooler_file, bins=bins, pixels=pixel_chunks(), ordered=True, assembly="hg38",
         )
 
-        print("Zoomifying cool file...")
+        print("Zoomifying cool file...", flush=True)
         cooler.zoomify_cooler(
-            base_uris=cooler_file,      # or a list of base coolers
-            outfile=mcool_file,       # where to write the multires file
-            resolutions=[1000, 5000, 10000, 25000, 50000, 100000, 250000, 1000000],
-            chunksize=10_000_000,         # number of pixels per worker chunk (tune for memory)
-            nproc=1,                      # >1 will multiprocessing coarsen in parallel
-            columns=["count"],            # which pixel columns to propagate
-            dtypes={"count": "int64"},    # dtype for that column in each zoom level
-            agg={"count": "sum"},         # how to aggregate values when coarsening
+            base_uris=cooler_file,
+            outfile=mcool_file,
+            resolutions=[r for r in (1000, 5000, 10000, 25000, 50000, 100000, 250000, 1000000) if r >= resolution],
+            chunksize=10_000_000,
+            nproc=1,
+            columns=["count"],
+            dtypes={"count": "int64"},
+            agg={"count": "sum"},
         )
 
-        print("Balancing mcool file...")
+        print("Balancing mcool file...", flush=True)
         with h5py.File(mcool_file, "r+") as f:
-            # list the internal groups that are actual coolers
             for grp_name in list(f["resolutions"].keys()):
                 uri = f"{mcool_file}::/resolutions/{grp_name}"
-                clr = cooler.Cooler(uri)
-                print(f"Balancing {uri} ...")
-
+                print(f"Balancing {uri} ...", flush=True)
                 cooler.balance_cooler(
-                    clr
+                    cooler.Cooler(uri),
+                    store=True  # persist weights to bins/weight (needed by toeplitz_normalize balance=True)
                 )
 
 def main(
@@ -222,10 +233,13 @@ def main(
     clusters_for_inference = np.array(read_clusters(file_path, resolution), dtype=object)
     np.save(os.path.join(save_dir, 'edge_list.npy'), clusters_for_inference, allow_pickle=True)
 
-    # Create contact map of virtual pairs
-    base_resolution = 1000
-    clusters_for_virtual_hic = read_clusters(file_path, base_resolution)
-    build_cooler_file(clusters_for_virtual_hic, base_resolution, create_mcool_files, save_dir)
+    # Create contact map of virtual pairs -- only when actually requested. The clique-expansion
+    # (a second read at base resolution + all-pairs over every concatemer) is unused by experiments
+    # that supply real Hi-C, and at scale (e.g. 78M concatemers) it exhausts memory.
+    if create_mcool_files:
+        base_resolution = 1000
+        clusters_for_virtual_hic = read_clusters(file_path, base_resolution)
+        build_cooler_file(clusters_for_virtual_hic, base_resolution, create_mcool_files, save_dir)
     
 if __name__ == "__main__":
 
